@@ -133,25 +133,169 @@ newXMLEntry device group capa = do
         XML device group capa
 
 
+capabilityFntnMain :: [String]-> Capab
+capabilityFntnMain capaMain = do
+                        let lista = listcapabilityShow capaMain
+                        if(lista/=[]) then newcapabilityEntry lista
+                        else Capab "" ""
+groupFntnMain :: [String]-> Grupo
+groupFntnMain groupMain = do
+                        let lista = listgroupShow groupMain
+                        if(lista/=[]) then newgroupEntry lista
+                        else Grupo ""
 
-funcioncapabi x = do
-                        let list = listacapability x
-                        if(list/=[]) then createcapability list
-                        else Capability "" ""
-
-funciongroup x = do
-                        let list = listagroup x
-                        if(list/=[]) then creategroup list
-                        else Group ""
---Función que crea un Device        
-funciondevice::[String]        -> Device        
-funciondevice        x = do
-                        let list = listadevice x
-                        if(list/=[]) then createdevice list
-                        else Device "" "" ""
+deviceFntnMain::[String] -> Dispositivo
+deviceFntnMain   deviceMain = do
+                        let list = listdeviceShow deviceMain
+                        if(list/=[]) then newdeviceEntry list
+                        else Dispositivo "" "" ""
                 
 
+parseXML' :: String -> [XMLAST]
+parseXML' str =
+  f ast where
+      ast = parse ((many innerXML)) "" str
+      f (Right x) = x
+      f (Left x) = [CouldNotParse (show x)]
 
+parseXML :: String -> XMLAST
+parseXML str =
+  f ast where
+      ast = parse (spaces >> xmlParser) "" str
+      f (Right x) = x
+      f (Left x) = CouldNotParse (show x)
+      
+xmlParser :: Parser XMLAST
+xmlParser =
+  try withoutExplictCloseTag <|> withExplicitCloseTag
+
+
+withExplicitCloseTag :: Parser XMLAST
+withExplicitCloseTag =
+  do
+    (name, attr) <- openTag
+    innerXML <- many innerXML
+    closeTag name
+    return (Element name attr innerXML)
+
+innerXML = comment <|> schema <|> xmlParser <|> parseBody
+
+parseBody = fmap Body $ many1 $ noneOf "<>"
+
+schema :: Parser XMLAST
+schema =
+  do
+    try $ string "<!"
+    body <- manyTill anyChar (string ">")
+    return (Schema body)
+
+comment :: Parser XMLAST
+comment =
+  do
+    try $ string "<!--"
+    body <- manyTill anyChar (string "-->")
+    return (Comment body)
+
+openTag :: Parser (String, [(String,String)])
+openTag =
+  do
+    try $ char '<' >> notFollowedBy (char '/')
+    tag <- many (letter <|> digit)
+    spaces
+    a <- try (many keyValue)
+    char '>'
+    return (tag, a)
+
+closeTag :: String -> Parser ()
+closeTag str =
+  do
+    try $ string "</"
+    spaces
+    string str
+    spaces
+    char '>'
+    return ()
+
+withoutExplictCloseTag :: Parser XMLAST
+withoutExplictCloseTag =
+  do
+    try $ char '<' >> notFollowedBy (char '/')
+    name <- many (letter <|> digit)
+    spaces
+    a <- try (many keyValue)
+    spaces
+    string "/>"
+    return (Element name a [])
+
+keyValue :: Parser (String, String)
+keyValue =
+  do
+    key <- many1 (letter <|> digit <|> char '-')
+    spaces
+    char '='
+    spaces
+    value <- quotedString
+    spaces
+    return (key, value)
+
+quotedString :: Parser String
+quotedString = do
+  q <- (try (char '"')) <|> char '\''
+  value <- fmap concat $ many
+    $ many1 (noneOf ['\\', q])
+      <|> try (string ['\\', q])
+      <|> try (string "\\")
+  char q
+  return value
+
+ producter :: [String]->Dispositivo->Grupo->Capab->[XML]
+ producter [] _ _ _ = []
+ producter (w:ws) de gro cap = do
+	let m = splitOneOf(("<>=/ \\\"") x
+    let fileWSp= shellSpace m
+    let lista=[]
+        if (head fileWSp) == "device" then do
+                        let dispositivom = deviceFntnMain $ tail fileWSp
+                        let xml = newXMLEntry dispositivom gro cap
+                        [xml]++producter ws dispositivom gro cap
+        else if (head fileWSp) == "group" then do
+                        let grop = groupFntnMain $ tail fileWSp
+                        let xml = newXMLEntry de grop cap
+                        [xml]++producter ws de grop cap
+        else if (head fileWSp) == "capability" then do
+                        let cab = capabilityFntnMain $ tail fileWSp
+                        let xml = newXMLEntry de gro cab
+                        [xml]++producter ws de gro cab
+                        
+        else lista++producter ws de gro cap
+
+getAllElements :: XMLAST -> [(XMLAST, String, XMLAST)]
+getAllElements ast = getAllElements' ast "" ast
+getAllElements' pe pp element@(Element n a es) = concat $ map (getAllElements' element (pp ++ "/" ++ n)) es
+getAllElements' pe pp x = [(pe, pp, x)]
+
+getElementsByName :: String -> XMLAST -> [(XMLAST, String, XMLAST)]
+getElementsByName str ast = filter (\e -> f e) (getAllElements ast) where
+                  f ((Element n _ _), _, _) = n == str
+                  f _ = False
+
+getElementsByPath :: String -> XMLAST -> [(XMLAST, String, XMLAST)]
+getElementsByPath str ast = filter (\e -> f e) (getAllElements ast) where
+                  f (_ , p, _) = p == str
+
+
+getAllBodies :: XMLAST -> [(String, String)]
+getAllBodies = getAllBodies' "" where
+  getAllBodies' :: String -> XMLAST -> [(String, String)]
+  getAllBodies' p (Body str) = [(p, str)]
+  getAllBodies' p (Element n a es) =
+               let v2 = concat $ map (getAllBodies' (fixUp p n)) es
+                   fixUp x y = x ++ "/" ++ y
+               in v2
+  getAllBodies' p _ = []
+
+getBodiesByName :: String -> XMLAST -> [String]
+getBodiesByName name xmlast= map snd $ filter (\(n,v) -> n == name) (getAllBodies xmlast)
                 
 
 
